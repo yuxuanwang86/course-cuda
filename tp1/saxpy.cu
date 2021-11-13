@@ -31,9 +31,9 @@ __global__
 void saxpyBlocsThreadsKops(const int N, float a, const float* x, float* y, const int k)
 {
   int idx;
-  for (idx = blockIdx.x * blockDim.x * k + threadIdx.x; idx < blockIdx.x * blockDim.x * k + threadIdx.x + k; ++idx) {
-
-    if (idx >= N) break;
+  int start = (blockIdx.x * blockDim.x + threadIdx.x) * k;
+  int end = start + k;
+  for (idx = start; idx < end && idx < N; ++idx) {
     y[idx] = x[idx] * a + y[idx];
   }
 }
@@ -97,3 +97,45 @@ int main(int argc, char** argv)
   saxpyBlocs << <N, 1 >> > (N, a, dx, dy);
   // Copier dy[N] dans res[N] pour la verification sur CPU
   cudaMemcpy(res, dy, sizeof(float) * N, cudaMemcpyDeviceToHost);
+  // Verifier le resultat
+  verifySaxpy(a, x, y, res, N);
+
+  // Re-initialiser dy[N] en recopiant y[N] la-dedans
+  cudaMemcpy(dy, y, N * sizeof(float), cudaMemcpyHostToDevice);
+
+  // Lancer le kernel saxpyBlocsThreads avec un certain blockSize et nombre de bloc
+  blockSize = 1024;
+  saxpyBlocsThreads << <N / blockSize, blockSize >> > (N, a, dx, dy);
+
+  // Copier dy[N] dans res[N] pour la verification sur CPU
+  cudaMemcpy(res, dy, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+  // Verifier le resultat
+  verifySaxpy(a, x, y, res, N);
+
+  // Re-initialiser dy[N] en recopiant y[N] la-dedans
+  cudaMemcpy(dy, y, N * sizeof(float), cudaMemcpyHostToDevice);
+
+  // Lancer le kernel saxpyBlocsThreadsKops avec un certain blockSize, nombre de bloc, et nombre d'operations par thread (variable k)
+  blockSize = 1024;
+  k = 8;
+  saxpyBlocsThreadsKops << <N / blockSize / k, blockSize >> > (N, a, dx, dy, k);
+
+  // Copier dy[N] dans res[N] pour la verification sur CPU
+  cudaMemcpy(res, dy, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+  // Verifier le resultat
+  verifySaxpy(a, x, y, res, N);
+
+  // Desallouer les tableau GPU
+  // A FAIRE ...
+  cudaFree(dx);
+  cudaFree(dy);
+
+  // Desallouer les tableaux CPU
+  free(x);
+  free(y);
+  free(res);
+
+  return 0;
+}
